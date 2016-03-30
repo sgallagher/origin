@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,19 +23,20 @@ import (
 	testserver "github.com/openshift/origin/test/util/server"
 )
 
-func templateEscape(s string) (string, error) {
-	temp := new(bytes.Buffer)
+// simulate embedding the given string in a template href
+func templateEscapeHref(test *testing.T, s string) string {
+	prefix := `<a href="`
+	suffix := `">`
 
-	t, err := template.New("foo").Parse(`{{define "T"}}{{.}}{{end}}`)
-	if err != nil {
-		return "", err
-	}
-	err = t.ExecuteTemplate(temp, "T", s)
-	if err != nil {
-		return "", err
+	b := new(bytes.Buffer)
+	t := template.Must(template.New("foo").Parse(fmt.Sprintf(`%s{{.}}%s`, prefix, suffix)))
+	if err := t.Execute(b, s); err != nil {
+		test.Fatalf("unexpected error escaping %s: %v", s, err)
+		return ""
 	}
 
-	return temp.String(), nil
+	escaped := b.String()
+	return escaped[len(prefix) : len(escaped)-len(suffix)]
 }
 
 func tryAccessURL(t *testing.T, url string, expectedStatus int, expectedRedirectLocation string, expectedLinks []string) *http.Response {
@@ -71,7 +73,8 @@ func tryAccessURL(t *testing.T, url string, expectedStatus int, expectedRedirect
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				} else if !matched {
-					t.Errorf("Expected a link matching %q in response body.", linkRegexp)
+					t.Errorf("Expected response body to match %s", linkRegexp)
+					t.Logf("Response body was %s", body)
 				}
 			}
 		}
@@ -170,10 +173,9 @@ func TestAccessOriginWebConsoleMultipleIdentityProviders(t *testing.T) {
 		Provider:        &configapi.AllowAllPasswordIdentityProvider{},
 	})
 
-	// Set up a third AllowAll provider with a space in the name and some
-	// unicode characters
+	// Set up a third AllowAll provider with a space in the name and some unicode characters
 	masterOptions.OAuthConfig.IdentityProviders = append(masterOptions.OAuthConfig.IdentityProviders, configapi.IdentityProvider{
-		Name:            "baz qux #2",
+		Name:            "Iñtërnâtiônàlizætiøn, !@#$^&*()",
 		UseAsChallenger: true,
 		UseAsLogin:      true,
 		MappingMethod:   "claim",
@@ -194,8 +196,7 @@ func TestAccessOriginWebConsoleMultipleIdentityProviders(t *testing.T) {
 	urlMap := make(map[string]urlResults)
 	linkRegexps := make([]string, 0)
 
-	// Verify that the plain /login URI is unavailable when multiple IDPs
-	// are in use.
+	// Verify that the plain /login URI is unavailable when multiple IDPs are in use.
 	urlMap["/login"] = urlResults{http.StatusForbidden, ""}
 
 	// Create the common base URLs
@@ -207,25 +208,26 @@ func TestAccessOriginWebConsoleMultipleIdentityProviders(t *testing.T) {
 	// This is done in a loop so that we can add an arbitrary additional set
 	// of providers to test.
 	for _, value := range masterOptions.OAuthConfig.IdentityProviders {
-		templateEscapedName, err := templateEscape(value.Name)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		// Query-encode the idp=<provider name> parameter name and value
+		idpQueryParam := url.Values{"idp": []string{value.Name}}.Encode()
 
-		queryEscapedName := template.URLQueryEscaper(templateEscapedName)
+		// Construct a URL that will select that IDP
+		providerSelectionURL := loginSelectorBase + "&" + idpQueryParam
 
-		// Path to the login URI is template-escaped, then query-escaped, then has the + substituted with %20
-		loginPathName := strings.Replace(queryEscapedName, "+", "%20", -1)
+		// URL-path-encode the idp name to construct the login page URL
+		loginURL := (&url.URL{Path: path.Join("/login", value.Name)}).String()
 
-		urlMap[loginSelectorBase+"&idp="+queryEscapedName] = urlResults{http.StatusFound, "/login/" + loginPathName}
-		urlMap["/login/"+loginPathName] = urlResults{http.StatusOK, ""}
+		// Expect the providerSelectionURL to redirect to the loginURL
+		urlMap[providerSelectionURL] = urlResults{http.StatusFound, loginURL}
+		// Expect the loginURL to be valid
+		urlMap[loginURL] = urlResults{http.StatusOK, ""}
 
-		// The name in the regular expression needs to be template-escaped again
-		regexpName, err := templateEscape(queryEscapedName)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		linkRegexps = append(linkRegexps, fmt.Sprintf("/oauth/authorize\\?(.*)(&amp;)?idp=%s(&amp;|$)", regexp.QuoteMeta(regexpName)))
+		// escape the query param the way the template will
+		templateIDPParam := templateEscapeHref(t, idpQueryParam)
+		// quote for the regex
+		regexIDPParam := regexp.QuoteMeta(templateIDPParam)
+		// Expect to see a link to the provider selection page URL with the idp param
+		linkRegexps = append(linkRegexps, fmt.Sprintf(`/oauth/authorize\?(.*&amp;)?%s(&amp;|")`, regexIDPParam))
 	}
 
 	// Test the loginSelectorBase for links to all of the IDPs
