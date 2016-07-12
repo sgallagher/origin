@@ -4,16 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 
 	kapi "k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/meta"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/util/sets"
 
 	"github.com/spf13/cobra"
 )
@@ -38,26 +32,17 @@ After you have created a secret, you probably want to make use of that secret in
 )
 
 type AddSecretOptions struct {
-	TargetName  string
-	SecretNames []string
+	SecretOptions
 
 	ForMount bool
 	ForPull  bool
 
-	Namespace string
-
-	Mapper          meta.RESTMapper
-	Typer           runtime.ObjectTyper
-	ClientMapper    resource.ClientMapper
-	ClientInterface client.Interface
-
-	Out io.Writer
+	typeFlags []string
 }
 
 // NewCmdAddSecret creates a command object for adding a secret reference to a service account
 func NewCmdAddSecret(name, fullName string, f *kcmdutil.Factory, out io.Writer) *cobra.Command {
-	o := &AddSecretOptions{Out: out}
-	var typeFlags []string
+	o := &AddSecretOptions{SecretOptions{Out: out}, false, false, nil}
 
 	cmd := &cobra.Command{
 		Use:     fmt.Sprintf("%s serviceaccounts/sa-name secrets/secret-name [secrets/another-secret-name]...", name),
@@ -65,7 +50,7 @@ func NewCmdAddSecret(name, fullName string, f *kcmdutil.Factory, out io.Writer) 
 		Long:    addSecretLong,
 		Example: fmt.Sprintf(addSecretExample, fullName),
 		Run: func(c *cobra.Command, args []string) {
-			if err := o.Complete(f, args, typeFlags); err != nil {
+			if err := o.Complete(f, args); err != nil {
 				kcmdutil.CheckErr(kcmdutil.UsageError(c, err.Error()))
 			}
 
@@ -80,22 +65,20 @@ func NewCmdAddSecret(name, fullName string, f *kcmdutil.Factory, out io.Writer) 
 		},
 	}
 
-	cmd.Flags().StringSliceVar(&typeFlags, "for", []string{"mount"}, "type of secret to add: mount or pull")
+	cmd.Flags().StringSliceVar(&o.typeFlags, "for", []string{"mount"}, "type of secret to add: mount or pull")
 
 	return cmd
 }
 
-func (o *AddSecretOptions) Complete(f *kcmdutil.Factory, args []string, typeFlags []string) error {
-	if len(args) < 2 {
-		return errors.New("must have service account name and at least one secret name")
+func (o *AddSecretOptions) Complete(f *kcmdutil.Factory, args []string) error {
+	if err := o.SecretOptions.Complete(f, args); err != nil {
+		return err
 	}
-	o.TargetName = args[0]
-	o.SecretNames = args[1:]
 
-	if len(typeFlags) == 0 {
+	if len(o.typeFlags) == 0 {
 		o.ForMount = true
 	} else {
-		for _, flag := range typeFlags {
+		for _, flag := range o.typeFlags {
 			loweredValue := strings.ToLower(flag)
 			switch loweredValue {
 			case "pull":
@@ -108,71 +91,30 @@ func (o *AddSecretOptions) Complete(f *kcmdutil.Factory, args []string, typeFlag
 		}
 	}
 
-	var err error
-	o.ClientInterface, err = f.Client()
-	if err != nil {
-		return err
-	}
-
-	o.Namespace, _, err = f.DefaultNamespace()
-	if err != nil {
-		return err
-	}
-
-	o.Mapper, o.Typer = f.Object(false)
-	o.ClientMapper = resource.ClientMapperFunc(f.ClientForMapping)
-
 	return nil
 }
 
 func (o AddSecretOptions) Validate() error {
-	if len(o.TargetName) == 0 {
-		return errors.New("service account name must be present")
+	if err := o.SecretOptions.Validate(); err != nil {
+		return err
 	}
-	if len(o.SecretNames) == 0 {
-		return errors.New("secret name must be present")
-	}
+
 	if !o.ForPull && !o.ForMount {
 		return errors.New("for must be present")
-	}
-	if o.Mapper == nil {
-		return errors.New("Mapper must be present")
-	}
-	if o.Typer == nil {
-		return errors.New("Typer must be present")
-	}
-	if o.ClientMapper == nil {
-		return errors.New("ClientMapper must be present")
-	}
-	if o.ClientInterface == nil {
-		return errors.New("ClientInterface must be present")
 	}
 
 	return nil
 }
 
 func (o AddSecretOptions) AddSecrets() error {
-	r := resource.NewBuilder(o.Mapper, o.Typer, o.ClientMapper, kapi.Codecs.UniversalDecoder()).
-		NamespaceParam(o.Namespace).
-		ResourceNames("serviceaccounts", o.TargetName).
-		SingleResourceType().
-		Do()
-	if r.Err() != nil {
-		return r.Err()
-	}
-	obj, err := r.Object()
+	serviceaccount, err := o.GetServiceAccount()
 	if err != nil {
 		return err
 	}
 
-	switch t := obj.(type) {
-	case *kapi.ServiceAccount:
-		err = o.addSecretsToServiceAccount(t)
-		if err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unhandled object: %#v", t)
+	err = o.addSecretsToServiceAccount(serviceaccount)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -183,14 +125,14 @@ func (o AddSecretOptions) AddSecrets() error {
 // addSecretsToServiceAccount adds secrets to the service account, either as pull secrets, mount secrets, or both.
 func (o AddSecretOptions) addSecretsToServiceAccount(serviceaccount *kapi.ServiceAccount) error {
 	updated := false
-	newSecrets, err := o.getSecrets()
+	newSecrets, err := o.GetSecrets()
 	if err != nil {
 		return err
 	}
-	newSecretNames := getSecretNames(newSecrets)
+	newSecretNames := o.GetSecretNames(newSecrets)
 
 	if o.ForMount {
-		currentSecrets := getMountSecretNames(serviceaccount)
+		currentSecrets := o.GetMountSecretNames(serviceaccount)
 		secretsToAdd := newSecretNames.Difference(currentSecrets)
 		for _, secretName := range secretsToAdd.List() {
 			serviceaccount.Secrets = append(serviceaccount.Secrets, kapi.ObjectReference{Name: secretName})
@@ -198,7 +140,7 @@ func (o AddSecretOptions) addSecretsToServiceAccount(serviceaccount *kapi.Servic
 		}
 	}
 	if o.ForPull {
-		currentSecrets := getPullSecretNames(serviceaccount)
+		currentSecrets := o.GetPullSecretNames(serviceaccount)
 		secretsToAdd := newSecretNames.Difference(currentSecrets)
 		for _, secretName := range secretsToAdd.List() {
 			serviceaccount.ImagePullSecrets = append(serviceaccount.ImagePullSecrets, kapi.LocalObjectReference{Name: secretName})
@@ -210,65 +152,4 @@ func (o AddSecretOptions) addSecretsToServiceAccount(serviceaccount *kapi.Servic
 		return err
 	}
 	return nil
-}
-
-func (o AddSecretOptions) getSecrets() ([]*kapi.Secret, error) {
-	r := resource.NewBuilder(o.Mapper, o.Typer, o.ClientMapper, kapi.Codecs.UniversalDecoder()).
-		NamespaceParam(o.Namespace).
-		ResourceNames("secrets", o.SecretNames...).
-		SingleResourceType().
-		Do()
-	if r.Err() != nil {
-		return nil, r.Err()
-	}
-	infos, err := r.Infos()
-	if err != nil {
-		return nil, err
-	}
-
-	secrets := []*kapi.Secret{}
-	for i := range infos {
-		info := infos[i]
-
-		switch t := info.Object.(type) {
-		case *kapi.Secret:
-			secrets = append(secrets, t)
-		default:
-			return nil, fmt.Errorf("unhandled object: %#v", t)
-		}
-	}
-
-	return secrets, nil
-}
-
-func getSecretNames(secrets []*kapi.Secret) sets.String {
-	names := sets.String{}
-	for _, secret := range secrets {
-		names.Insert(secret.Name)
-	}
-	return names
-}
-
-func getMountSecretNames(serviceaccount *kapi.ServiceAccount) sets.String {
-	names := sets.String{}
-	for _, secret := range serviceaccount.Secrets {
-		names.Insert(secret.Name)
-	}
-	return names
-}
-
-func getPullSecretNames(serviceaccount *kapi.ServiceAccount) sets.String {
-	names := sets.String{}
-	for _, secret := range serviceaccount.ImagePullSecrets {
-		names.Insert(secret.Name)
-	}
-	return names
-}
-
-func (o AddSecretOptions) GetOut() io.Writer {
-	if o.Out == nil {
-		return ioutil.Discard
-	}
-
-	return o.Out
 }
