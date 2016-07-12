@@ -2092,20 +2092,39 @@ Change the number of pods in a deployment
 
 
 == oc secrets add
-Add secrets to a ServiceAccount
+DEPRECATED: secrets link
 
 ====
 
 [options="nowrap"]
 ----
-  // To use your secret inside of a pod or as a push, pull, or source secret for a build, you must add a 'mount' secret to your service account like this:
-  oc secrets add serviceaccount/sa-name secrets/secret-name secrets/another-secret-name
+  // To use your secret inside of a pod or as a push, pull, or source secret for a build, you must link a 'mount' secret to your service account like this:
+  oc serviceaccount/sa-name secrets/secret-name secrets/another-secret-name
 
-  // To use your secret as an image pull secret, you must add a 'pull' secret to your service account like this:
-  oc secrets add serviceaccount/sa-name secrets/secret-name --for=pull
+  // To use your secret as an image pull secret, you must link a 'pull' secret to your service account like this:
+  oc serviceaccount/sa-name secrets/secret-name --for=pull
 
   // To use your secret for image pulls or inside a pod:
-  oc secrets add serviceaccount/sa-name secrets/secret-name --for=pull,mount
+  oc serviceaccount/sa-name secrets/secret-name --for=pull,mount
+----
+====
+
+
+== oc secrets link
+Link secrets to a ServiceAccount
+
+====
+
+[options="nowrap"]
+----
+  // To use your secret inside of a pod or as a push, pull, or source secret for a build, you must link a 'mount' secret to your service account like this:
+  oc secrets link serviceaccount/sa-name secrets/secret-name secrets/another-secret-name
+
+  // To use your secret as an image pull secret, you must link a 'pull' secret to your service account like this:
+  oc secrets link serviceaccount/sa-name secrets/secret-name --for=pull
+
+  // To use your secret for image pulls or inside a pod:
+  oc secrets link serviceaccount/sa-name secrets/secret-name --for=pull,mount
 ----
 ====
 

@@ -249,6 +249,7 @@ openshift-cli-rsync.1
 openshift-cli-run.1
 openshift-cli-scale.1
 openshift-cli-secrets-add.1
+openshift-cli-secrets-link.1
 openshift-cli-secrets-new-basicauth.1
 openshift-cli-secrets-new-dockercfg.1
 openshift-cli-secrets-new-sshauth.1

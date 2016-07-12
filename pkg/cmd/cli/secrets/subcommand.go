@@ -49,7 +49,7 @@ func NewCmdSecrets(name, fullName string, f *clientcmd.Factory, reader io.Reader
 	cmds.AddCommand(NewCmdCreateDockerConfigSecret(CreateDockerConfigSecretRecommendedName, fullName+" "+CreateDockerConfigSecretRecommendedName, f.Factory, out, newSecretFullName, ocEditFullName))
 	cmds.AddCommand(NewCmdCreateBasicAuthSecret(CreateBasicAuthSecretRecommendedCommandName, fullName+" "+CreateBasicAuthSecretRecommendedCommandName, f.Factory, reader, out, newSecretFullName, ocEditFullName))
 	cmds.AddCommand(NewCmdCreateSSHAuthSecret(CreateSSHAuthSecretRecommendedCommandName, fullName+" "+CreateSSHAuthSecretRecommendedCommandName, f.Factory, out, newSecretFullName, ocEditFullName))
-	cmds.AddCommand(NewCmdAddSecret(AddSecretRecommendedName, fullName+" "+AddSecretRecommendedName, f.Factory, out))
+	cmds.AddCommand(NewCmdLinkSecret(LinkSecretRecommendedName, fullName+" "+LinkSecretRecommendedName, f.Factory, out))
 
 	return cmds
 }
