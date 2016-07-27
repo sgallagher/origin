@@ -20,16 +20,16 @@ const (
 	linkSecretLong = `
 Link secrets to a service account
 
-After you have created a secret, you probably want to make use of that secret inside of a pod, for a build, or as an image pull secret.  In order to do that, you must link your secret to a service account.`
+Linking a secret enables a service account to automatically use that secret for some forms of authentication`
 
-	linkSecretExample = `  // To use your secret inside of a pod or as a push, pull, or source secret for a build, you must link a 'mount' secret to your service account like this:
-  %[1]s serviceaccount/sa-name secrets/secret-name secrets/another-secret-name
+	linkSecretExample = `  # Add an image pull secret to a service account to automatically use it for pulling pod images:
+  %[1]s serviceaccount-name pull-secret --for=pull
 
-  // To use your secret as an image pull secret, you must link a 'pull' secret to your service account like this:
-  %[1]s serviceaccount/sa-name secrets/secret-name --for=pull
+  # Add an image pull secret to a service account to automatically use it for both pulling and pushing build images:
+  %[1]s builder builder-image-secret --for=pull,mount
 
-  // To use your secret for image pulls or inside a pod:
-  %[1]s serviceaccount/sa-name secrets/secret-name --for=pull,mount`
+  # If the cluster's serviceAccountConfig is operating with limitSecretReferences: True, secrets must be added to the pod's service account whitelist in order to be available to the pod:
+  %[1]s pod-sa pod-secret`
 )
 
 type LinkSecretOptions struct {
@@ -46,7 +46,7 @@ func NewCmdLinkSecret(name, fullName string, f *kcmdutil.Factory, out io.Writer)
 	o := &LinkSecretOptions{SecretOptions{Out: out}, false, false, nil}
 
 	cmd := &cobra.Command{
-		Use:     fmt.Sprintf("%s serviceaccounts/sa-name secrets/secret-name [secrets/another-secret-name]...", name),
+		Use:     fmt.Sprintf("%s serviceaccounts-name secret-name [another-secret-name]...", name),
 		Short:   "Link secrets to a ServiceAccount",
 		Long:    linkSecretLong,
 		Example: fmt.Sprintf(linkSecretExample, fullName),

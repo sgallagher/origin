@@ -2098,14 +2098,14 @@ DEPRECATED: secrets link
 
 [options="nowrap"]
 ----
-  // To use your secret inside of a pod or as a push, pull, or source secret for a build, you must link a 'mount' secret to your service account like this:
-  oc serviceaccount/sa-name secrets/secret-name secrets/another-secret-name
+  # Add an image pull secret to a service account to automatically use it for pulling pod images:
+  oc serviceaccount-name pull-secret --for=pull
 
-  // To use your secret as an image pull secret, you must link a 'pull' secret to your service account like this:
-  oc serviceaccount/sa-name secrets/secret-name --for=pull
+  # Add an image pull secret to a service account to automatically use it for both pulling and pushing build images:
+  oc builder builder-image-secret --for=pull,mount
 
-  // To use your secret for image pulls or inside a pod:
-  oc serviceaccount/sa-name secrets/secret-name --for=pull,mount
+  # If the cluster's serviceAccountConfig is operating with limitSecretReferences: True, secrets must be added to the pod's service account whitelist in order to be available to the pod:
+  oc pod-sa pod-secret
 ----
 ====
 
@@ -2117,14 +2117,14 @@ Link secrets to a ServiceAccount
 
 [options="nowrap"]
 ----
-  // To use your secret inside of a pod or as a push, pull, or source secret for a build, you must link a 'mount' secret to your service account like this:
-  oc secrets link serviceaccount/sa-name secrets/secret-name secrets/another-secret-name
+  # Add an image pull secret to a service account to automatically use it for pulling pod images:
+  oc secrets link serviceaccount-name pull-secret --for=pull
 
-  // To use your secret as an image pull secret, you must link a 'pull' secret to your service account like this:
-  oc secrets link serviceaccount/sa-name secrets/secret-name --for=pull
+  # Add an image pull secret to a service account to automatically use it for both pulling and pushing build images:
+  oc secrets link builder builder-image-secret --for=pull,mount
 
-  // To use your secret for image pulls or inside a pod:
-  oc secrets link serviceaccount/sa-name secrets/secret-name --for=pull,mount
+  # If the cluster's serviceAccountConfig is operating with limitSecretReferences: True, secrets must be added to the pod's service account whitelist in order to be available to the pod:
+  oc secrets link pod-sa pod-secret
 ----
 ====
 
