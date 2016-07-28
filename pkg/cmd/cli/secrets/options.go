@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"os"
 
 	kapi "k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/meta"
@@ -144,24 +145,24 @@ func (o SecretOptions) GetOut() io.Writer {
 
 // GetSecrets Return a list of secret objects in the default namespace
 func (o SecretOptions) GetSecrets() ([]*kapi.Secret, error) {
-	r := resource.NewBuilder(o.Mapper, o.Typer, o.ClientMapper, kapi.Codecs.UniversalDecoder()).
-		NamespaceParam(o.Namespace).
-		ResourceNames("secrets", o.SecretNames...).
-		SingleResourceType().
-		Do()
-	if r.Err() != nil {
-		return nil, r.Err()
-	}
-	infos, err := r.Infos()
-	if err != nil {
-		return nil, err
-	}
-
 	secrets := []*kapi.Secret{}
-	for i := range infos {
-		info := infos[i]
 
-		switch t := info.Object.(type) {
+	for _, secretName := range o.SecretNames {
+		r := resource.NewBuilder(o.Mapper, o.Typer, o.ClientMapper, kapi.Codecs.UniversalDecoder()).
+			NamespaceParam(o.Namespace).
+			ResourceNames("secrets", secretName).
+			SingleResourceType().
+			Do()
+		if r.Err() != nil {
+			return nil, r.Err()
+		}
+		obj, err := r.Object()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "secrets \"%s\" not found\n", secretName)
+			// Missing secrets are non-fatal
+			continue
+		}
+		switch t := obj.(type) {
 		case *kapi.Secret:
 			secrets = append(secrets, t)
 		default:
