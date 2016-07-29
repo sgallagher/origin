@@ -102,10 +102,10 @@ os::cmd::expect_failure 'oc get serviceaccounts/deployer -o yaml |grep -q basica
 os::cmd::expect_success 'oc secrets link deployer basicauth'
 
 # Removing a non-existent secret should warn but succeed and change nothing
-os::cmd::expect_success_and_text 'oc secrets unlink deployer foobar' 'secrets "foobar" not found'
+os::cmd::expect_failure_and_text 'oc secrets unlink deployer foobar' 'secrets "foobar" not found'
 
 # Make sure that removing an existent and non-existent secret succeeds but warns about the non-existent one
-os::cmd::expect_success_and_text 'oc secrets unlink deployer foobar basicauth' 'secrets "foobar" not found'
+os::cmd::expect_failure_and_text 'oc secrets unlink deployer foobar basicauth' 'secrets "foobar" not found'
 # Make sure that the existing secret is removed
 os::cmd::expect_failure 'oc get serviceaccounts/deployer -o yaml |grep -q basicauth'
 

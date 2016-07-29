@@ -144,8 +144,9 @@ func (o SecretOptions) GetOut() io.Writer {
 }
 
 // GetSecrets Return a list of secret objects in the default namespace
-func (o SecretOptions) GetSecrets() ([]*kapi.Secret, error) {
+func (o SecretOptions) GetSecrets() ([]*kapi.Secret, bool, error) {
 	secrets := []*kapi.Secret{}
+	failLater := false
 
 	for _, secretName := range o.SecretNames {
 		r := resource.NewBuilder(o.Mapper, o.Typer, o.ClientMapper, kapi.Codecs.UniversalDecoder()).
@@ -154,21 +155,27 @@ func (o SecretOptions) GetSecrets() ([]*kapi.Secret, error) {
 			SingleResourceType().
 			Do()
 		if r.Err() != nil {
-			return nil, r.Err()
+			return nil, false, r.Err()
 		}
 		obj, err := r.Object()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "secrets \"%s\" not found\n", secretName)
-			// Missing secrets are non-fatal
+			// Missing secrets are non-fatal but the command should not return
+			// success.
+			failLater = true
 			continue
 		}
 		switch t := obj.(type) {
 		case *kapi.Secret:
 			secrets = append(secrets, t)
 		default:
-			return nil, fmt.Errorf("unhandled object: %#v", t)
+			return nil, false, fmt.Errorf("unhandled object: %#v", t)
 		}
 	}
 
-	return secrets, nil
+	if len(secrets) == 0 {
+		return nil, false, errors.New("No valid secrets found")
+	}
+
+	return secrets, failLater, nil
 }

@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
@@ -71,7 +72,7 @@ func (o UnlinkSecretOptions) UnlinkSecrets() error {
 func (o UnlinkSecretOptions) unlinkSecretsFromServiceAccount(serviceaccount *kapi.ServiceAccount) error {
 	// All of the requested secrets must be present in either the Mount or Pull secrets
 	// If any of them are not present, we'll return an error and push no changes.
-	rmSecrets, err := o.GetSecrets()
+	rmSecrets, failLater, err := o.GetSecrets()
 	if err != nil {
 		return err
 	}
@@ -115,6 +116,13 @@ func (o UnlinkSecretOptions) unlinkSecretsFromServiceAccount(serviceaccount *kap
 	serviceaccount.Secrets = newMountSecrets
 	serviceaccount.ImagePullSecrets = newPullSecrets
 	_, err = o.ClientInterface.ServiceAccounts(o.Namespace).Update(serviceaccount)
+	if err != nil {
+		return err
+	}
 
-	return err
+	if failLater {
+		return errors.New("Some secrets could not be unlinked")
+	}
+
+	return nil
 }
